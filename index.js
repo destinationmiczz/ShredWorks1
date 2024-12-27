@@ -76,3 +76,23 @@ app.post('/unban', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+async function generateDbDiagramSchema() {
+  const bannedPlayers = await fetchBannedPlayers();
+
+  console.log('Table banned_players {');
+  console.log('  user_id varchar(50) [pk];');
+  console.log('  reason varchar(255);');
+  console.log('  ban_time datetime [not null];');
+  console.log('  status varchar(50) [not null];');
+  console.log('}');
+
+  console.log('\n-- Insert sample data:');
+  bannedPlayers.forEach(player => {
+    console.log(
+      `INSERT INTO banned_players (user_id, reason, ban_time, status) VALUES ('${player.user_id}', '${player.reason}', '${player.ban_time}', '${player.status}');`
+    );
+  });
+}
+
+// Generate schema and data
+generateDbDiagramSchema();
