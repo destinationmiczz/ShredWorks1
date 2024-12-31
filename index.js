@@ -49,6 +49,14 @@ app.post('/ban', (req, res) => {
 });
 
 // Endpoint to fetch the ban list
+app.get('/bans', (req, res) => {
+    const banList = readBanList();
+    res.json({
+        bannedPlayers: banList
+    });
+});
+
+// Endpoint to fetch the ban list
 app.get('/ban', (req, res) => {
     const { playerId } = req.query;
     if (!playerId) {
