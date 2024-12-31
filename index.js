@@ -57,19 +57,32 @@ app.get('/bans', (req, res) => {
 });
 
 // Endpoint to fetch the ban list
-app.get('/ban', (req, res) => {
-    const { playerId } = req.query;
-    if (!playerId) {
-        return res.status(400).send('Player ID is required.');
-    }
+// Endpoint to fetch the ban list or query a specific player
+app.get('/bans', (req, res) => {
     const banList = readBanList();
-    const bannedPlayer = banList.find(player => player.user_id === playerId);
-    if (bannedPlayer) {
-        res.status(200).send(bannedPlayer);
-    } else {
-        res.status(404).send({ message: 'Player not found in ban list.' });
+    const { playerId } = req.query;
+
+    if (playerId) {
+        const bannedPlayer = banList.find(player => player.user_id === playerId);
+
+        if (bannedPlayer) {
+            return res.json({
+                message: `Player ${playerId} is banned.`,
+                bannedPlayer
+            });
+        } else {
+            return res.status(404).json({
+                message: `Player ${playerId} is not banned.`,
+            });
+        }
     }
+
+    // If no playerId is provided, return the entire ban list
+    res.json({
+        bannedPlayers: banList
+    });
 });
+
 
 
 // Endpoint to unban a player
