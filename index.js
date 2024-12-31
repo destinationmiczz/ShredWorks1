@@ -49,12 +49,20 @@ app.post('/ban', (req, res) => {
 });
 
 // Endpoint to fetch the ban list
-app.get('/bans', (req, res) => {
+app.get('/ban', (req, res) => {
+    const { playerId } = req.query;
+    if (!playerId) {
+        return res.status(400).send('Player ID is required.');
+    }
     const banList = readBanList();
-    res.json({
-        bannedPlayers: banList
-    });
+    const bannedPlayer = banList.find(player => player.user_id === playerId);
+    if (bannedPlayer) {
+        res.status(200).send(bannedPlayer);
+    } else {
+        res.status(404).send({ message: 'Player not found in ban list.' });
+    }
 });
+
 
 // Endpoint to unban a player
 app.post('/unban', (req, res) => {
