@@ -1,7 +1,13 @@
 const express = require('express');
 const fs = require('fs');
+const noblox = require('noblox.js');
+const dotenv = require('dotenv');
+
+dotenv.config();
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const groupId = parseInt(process.env.GROUP_ID, 10);
+const robloxCookie = process.env.ROBLOX_COOKIE;
 
 const banListFilePath = 'banList.json'; // File where the ban list will be saved
 
@@ -20,6 +26,20 @@ function writeBanList(banList) {
 }
 
 app.use(express.json());
+
+// Initialize Noblox.js
+(async () => {
+    try {
+        await noblox.setCookie(robloxCookie);
+        console.log('Logged into Roblox successfully!');
+    } catch (error) {
+        console.error('Failed to log into Roblox:', error.message);
+        process.exit(1);
+    }
+})();
+
+// In-memory blacklist
+const blacklist = [];
 
 // Endpoint to ban a player
 app.post('/ban', (req, res) => {
@@ -48,15 +68,6 @@ app.post('/ban', (req, res) => {
     });
 });
 
-// Endpoint to fetch the ban list
-app.get('/bans', (req, res) => {
-    const banList = readBanList();
-    res.json({
-        bannedPlayers: banList
-    });
-});
-
-// Endpoint to fetch the ban list
 // Endpoint to fetch the ban list or query a specific player
 app.get('/bans', (req, res) => {
     const banList = readBanList();
@@ -83,8 +94,6 @@ app.get('/bans', (req, res) => {
     });
 });
 
-
-
 // Endpoint to unban a player
 app.post('/unban', (req, res) => {
     const { playerId } = req.body;
@@ -102,7 +111,44 @@ app.post('/unban', (req, res) => {
     });
 });
 
+// Set Rank Endpoint
+app.post('/set-rank', async (req, res) => {
+    const { userId, rankId } = req.body;
+    if (!userId || rankId == null) {
+        return res.status(400).send('userId and rankId are required.');
+    }
+
+    try {
+        const rankName = await noblox.setRank(groupId, userId, rankId);
+        res.status(200).send({ message: `Rank updated to ${rankName} successfully.` });
+    } catch (error) {
+        res.status(500).send({ error: 'Failed to update rank.', details: error.message });
+    }
+});
+
+// Blacklist Rank Endpoint
+app.post('/blacklist-rank', (req, res) => {
+    const { userId, rankThreshold } = req.body;
+    if (!userId || rankThreshold == null) {
+        return res.status(400).send('userId and rankThreshold are required.');
+    }
+
+    blacklist.push({ userId, rankThreshold });
+    res.status(200).send({ message: `User ${userId} blacklisted from rank ${rankThreshold} and higher.` });
+});
+
+// Middleware to Check Blacklist
+app.use((req, res, next) => {
+    const { userId, rankId } = req.body;
+    const userBlacklist = blacklist.find(entry => entry.userId === userId);
+
+    if (userBlacklist && rankId >= userBlacklist.rankThreshold) {
+        return res.status(403).send({ error: 'User is blacklisted from this rank or higher.' });
+    }
+
+    next();
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
-
