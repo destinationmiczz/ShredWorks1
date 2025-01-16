@@ -9,7 +9,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const groupId = parseInt(process.env.GROUP_ID, 10);
 const robloxCookie = process.env.ROBLOX_COOKIE;
-const discordBotToken = process.env.DISCORD_BOT_TOKEN; // Add your Discord bot token here
 
 const banListFilePath = 'banList.json';
 
@@ -38,13 +37,81 @@ app.use(express.json());
     }
 })();
 
-// Ban-related endpoints (same as before)
-app.post('/ban', (req, res) => { /* unchanged */ });
-app.get('/bans', (req, res) => { /* unchanged */ });
-app.post('/unban', (req, res) => { /* unchanged */ });
-app.post('/set-rank', async (req, res) => { /* unchanged */ });
-app.post('/blacklist-rank', (req, res) => { /* unchanged */ });
-app.use((req, res, next) => { /* unchanged */ });
+// Ban-related endpoints
+app.post('/ban', (req, res) => {
+    const { userId, reason } = req.body;
+    if (!userId || typeof userId !== 'number') {
+        return res.status(400).json({ error: 'Invalid or missing userId.' });
+    }
+
+    noblox.ban(groupId, userId, reason)
+        .then(() => {
+            const banList = readBanList();
+            banList.push({ userId, reason });
+            writeBanList(banList);
+            res.json({ success: true, message: `User ${userId} banned successfully.` });
+        })
+        .catch((error) => {
+            console.error('Error banning user:', error.message);
+            res.status(500).json({ error: 'Failed to ban user.' });
+        });
+});
+
+app.get('/bans', (req, res) => {
+    const banList = readBanList();
+    res.json(banList);
+});
+
+app.post('/unban', (req, res) => {
+    const { userId } = req.body;
+    if (!userId || typeof userId !== 'number') {
+        return res.status(400).json({ error: 'Invalid or missing userId.' });
+    }
+
+    noblox.unban(groupId, userId)
+        .then(() => {
+            let banList = readBanList();
+            banList = banList.filter((ban) => ban.userId !== userId);
+            writeBanList(banList);
+            res.json({ success: true, message: `User ${userId} unbanned successfully.` });
+        })
+        .catch((error) => {
+            console.error('Error unbanning user:', error.message);
+            res.status(500).json({ error: 'Failed to unban user.' });
+        });
+});
+
+app.post('/set-rank', async (req, res) => {
+    const { userId, rank } = req.body;
+    if (!userId || typeof userId !== 'number' || !rank || typeof rank !== 'number') {
+        return res.status(400).json({ error: 'Invalid or missing userId or rank.' });
+    }
+
+    noblox.setRank(groupId, userId, rank)
+        .then(() => {
+            res.json({ success: true, message: `User ${userId} rank set to ${rank} successfully.` });
+        })
+        .catch((error) => {
+            console.error('Error setting rank:', error.message);
+            res.status(500).json({ error: 'Failed to set user rank.' });
+        });
+});
+
+app.post('/blacklist-rank', (req, res) => {
+    const { rank } = req.body;
+    if (!rank || typeof rank !== 'number') {
+        return res.status(400).json({ error: 'Invalid or missing rank.' });
+    }
+
+    noblox.setRank(groupId, userId, rank)
+        .then(() => {
+            res.json({ success: true, message: `Rank ${rank} blacklisted successfully.` });
+        })
+        .catch((error) => {
+            console.error('Error blacklisting rank:', error.message);
+            res.status(500).json({ error: 'Failed to blacklist rank.' });
+        });
+});
 
 // Generate Discord Transcript
 app.post('/generate-transcript', async (req, res) => {
@@ -62,7 +129,7 @@ app.post('/generate-transcript', async (req, res) => {
         while (true) {
             const url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100${lastMessageId ? `&before=${lastMessageId}` : ''}`;
             const response = await fetch(url, {
-                headers: { Authorization: `Bot ${discordBotToken}` },
+                headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
             });
 
             if (!response.ok) {
