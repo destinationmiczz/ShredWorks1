@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const noblox = require('noblox.js');
 const dotenv = require('dotenv');
-const fetch = require('node-fetch'); // For API calls to Discord
+import fetch from 'node-fetch';
 
 dotenv.config();
 const app = express();
