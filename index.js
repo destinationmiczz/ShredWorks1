@@ -2,7 +2,6 @@ const express = require('express');
 const fs = require('fs');
 const noblox = require('noblox.js');
 const dotenv = require('dotenv');
-import fetch from 'node-fetch';
 
 dotenv.config();
 const app = express();
@@ -10,9 +9,9 @@ const PORT = process.env.PORT || 3000;
 const groupId = parseInt(process.env.GROUP_ID, 10);
 const robloxCookie = process.env.ROBLOX_COOKIE;
 
-const banListFilePath = 'banList.json';
+const banListFilePath = 'banList.json'; // File where the ban list will be saved
 
-// Helper functions for ban list
+// Helper function to read ban list from the file
 function readBanList() {
     if (fs.existsSync(banListFilePath)) {
         const data = fs.readFileSync(banListFilePath, 'utf8');
@@ -21,12 +20,14 @@ function readBanList() {
     return [];
 }
 
+// Helper function to write ban list to the file
 function writeBanList(banList) {
     fs.writeFileSync(banListFilePath, JSON.stringify(banList, null, 2), 'utf8');
 }
 
-// Middleware and initialization
 app.use(express.json());
+
+// Initialize Noblox.js
 (async () => {
     try {
         await noblox.setCookie(robloxCookie);
@@ -37,195 +38,115 @@ app.use(express.json());
     }
 })();
 
-// Ban-related endpoints
+// In-memory blacklist
+const blacklist = [];
+
+// Endpoint to ban a player
 app.post('/ban', (req, res) => {
-    const { userId, reason } = req.body;
-    if (!userId || typeof userId !== 'number') {
-        return res.status(400).json({ error: 'Invalid or missing userId.' });
+    const { playerId, reason } = req.body;
+
+    if (!playerId) {
+        return res.status(400).send('Player ID is required.');
     }
 
-    noblox.ban(groupId, userId, reason)
-        .then(() => {
-            const banList = readBanList();
-            banList.push({ userId, reason });
-            writeBanList(banList);
-            res.json({ success: true, message: `User ${userId} banned successfully.` });
-        })
-        .catch((error) => {
-            console.error('Error banning user:', error.message);
-            res.status(500).json({ error: 'Failed to ban user.' });
-        });
+    let banList = readBanList();
+
+    // Add player to the ban list and simulate a successful ban action
+    const bannedPlayer = { 
+        user_id: playerId, 
+        reason: reason || "No reason provided", 
+        ban_time: new Date().toISOString(),
+        status: 'banned'
+    };
+
+    banList.push(bannedPlayer);
+    writeBanList(banList); // Save the updated ban list to the file
+
+    res.status(200).send({
+        message: `Player ${playerId} has been banned.`,
+        bannedPlayer: bannedPlayer
+    });
 });
 
+// Endpoint to fetch the ban list or query a specific player
 app.get('/bans', (req, res) => {
     const banList = readBanList();
-    res.json(banList);
+    const { playerId } = req.query;
+
+    if (playerId) {
+        const bannedPlayer = banList.find(player => player.user_id === playerId);
+
+        if (bannedPlayer) {
+            return res.json({
+                message: `Player ${playerId} is banned.`,
+                bannedPlayer
+            });
+        } else {
+            return res.status(404).json({
+                message: `Player ${playerId} is not banned.`,
+            });
+        }
+    }
+
+    // If no playerId is provided, return the entire ban list
+    res.json({
+        bannedPlayers: banList
+    });
 });
 
+// Endpoint to unban a player
 app.post('/unban', (req, res) => {
-    const { userId } = req.body;
-    if (!userId || typeof userId !== 'number') {
-        return res.status(400).json({ error: 'Invalid or missing userId.' });
+    const { playerId } = req.body;
+
+    if (!playerId) {
+        return res.status(400).send('Player ID is required.');
     }
 
-    noblox.unban(groupId, userId)
-        .then(() => {
-            let banList = readBanList();
-            banList = banList.filter((ban) => ban.userId !== userId);
-            writeBanList(banList);
-            res.json({ success: true, message: `User ${userId} unbanned successfully.` });
-        })
-        .catch((error) => {
-            console.error('Error unbanning user:', error.message);
-            res.status(500).json({ error: 'Failed to unban user.' });
-        });
+    let banList = readBanList();
+    banList = banList.filter(player => player.user_id !== playerId); // Remove the player from the ban list
+    writeBanList(banList);
+
+    res.status(200).send({
+        message: `Player ${playerId} has been unbanned.`
+    });
 });
 
+// Set Rank Endpoint
 app.post('/set-rank', async (req, res) => {
-    const { userId, rank } = req.body;
-    if (!userId || typeof userId !== 'number' || !rank || typeof rank !== 'number') {
-        return res.status(400).json({ error: 'Invalid or missing userId or rank.' });
-    }
-
-    noblox.setRank(groupId, userId, rank)
-        .then(() => {
-            res.json({ success: true, message: `User ${userId} rank set to ${rank} successfully.` });
-        })
-        .catch((error) => {
-            console.error('Error setting rank:', error.message);
-            res.status(500).json({ error: 'Failed to set user rank.' });
-        });
-});
-
-app.post('/blacklist-rank', (req, res) => {
-    const { rank } = req.body;
-    if (!rank || typeof rank !== 'number') {
-        return res.status(400).json({ error: 'Invalid or missing rank.' });
-    }
-
-    noblox.setRank(groupId, userId, rank)
-        .then(() => {
-            res.json({ success: true, message: `Rank ${rank} blacklisted successfully.` });
-        })
-        .catch((error) => {
-            console.error('Error blacklisting rank:', error.message);
-            res.status(500).json({ error: 'Failed to blacklist rank.' });
-        });
-});
-
-// Generate Discord Transcript
-app.post('/generate-transcript', async (req, res) => {
-    const { channelId } = req.body;
-
-    if (!channelId) {
-        return res.status(400).json({ error: 'Channel ID is required.' });
+    const { userId, rankId } = req.body;
+    if (!userId || rankId == null) {
+        return res.status(400).send('userId and rankId are required.');
     }
 
     try {
-        let allMessages = [];
-        let lastMessageId = null;
-
-        // Paginate through messages
-        while (true) {
-            const url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=100${lastMessageId ? `&before=${lastMessageId}` : ''}`;
-            const response = await fetch(url, {
-                headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
-            });
-
-            if (!response.ok) {
-                return res.status(response.status).json({ error: `Failed to fetch messages: ${response.statusText}` });
-            }
-
-            const messages = await response.json();
-
-            if (messages.length === 0) break; // Stop if no more messages are returned
-
-            allMessages = allMessages.concat(messages);
-            lastMessageId = messages[messages.length - 1].id; // Update the lastMessageId for pagination
-        }
-
-        // Generate HTML-styled transcript
-        const transcriptHTML = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Discord Transcript</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    background-color: #36393F;
-                    color: #DCDDDE;
-                    margin: 0;
-                    padding: 0;
-                }
-                .channel {
-                    max-width: 800px;
-                    margin: 20px auto;
-                    padding: 20px;
-                    background-color: #2F3136;
-                    border-radius: 8px;
-                }
-                .message {
-                    display: flex;
-                    align-items: flex-start;
-                    margin-bottom: 10px;
-                }
-                .avatar {
-                    width: 40px;
-                    height: 40px;
-                    border-radius: 50%;
-                    margin-right: 10px;
-                }
-                .content {
-                    flex: 1;
-                }
-                .username {
-                    font-weight: bold;
-                    color: #FFFFFF;
-                }
-                .timestamp {
-                    margin-left: 5px;
-                    font-size: 0.85em;
-                    color: #B9BBBE;
-                }
-                .text {
-                    margin: 5px 0 0;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="channel">
-                ${allMessages
-                  .reverse()
-                  .map(
-                    msg => `
-                    <div class="message">
-                        <img class="avatar" src="${msg.author.avatar ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png'}" alt="${msg.author.username}'s avatar">
-                        <div class="content">
-                            <div>
-                                <span class="username">${msg.author.username}</span>
-                                <span class="timestamp">[${new Date(msg.timestamp).toLocaleString()}]</span>
-                            </div>
-                            <div class="text">${msg.content}</div>
-                        </div>
-                    </div>
-                    `
-                  )
-                  .join('')}
-            </div>
-        </body>
-        </html>
-        `;
-
-        res.header('Content-Type', 'text/html');
-        res.send(transcriptHTML);
-
+        const rankName = await noblox.setRank(groupId, userId, rankId);
+        res.status(200).send({ message: `Rank updated to ${rankName} successfully.` });
     } catch (error) {
-        console.error('Error generating transcript:', error);
-        res.status(500).json({ error: 'Failed to generate transcript.' });
+        res.status(500).send({ error: 'Failed to update rank.', details: error.message });
     }
+});
+
+// Blacklist Rank Endpoint
+app.post('/blacklist-rank', (req, res) => {
+    const { userId, rankThreshold } = req.body;
+    if (!userId || rankThreshold == null) {
+        return res.status(400).send('userId and rankThreshold are required.');
+    }
+
+    blacklist.push({ userId, rankThreshold });
+    res.status(200).send({ message: `User ${userId} blacklisted from rank ${rankThreshold} and higher.` });
+});
+
+// Middleware to Check Blacklist
+app.use((req, res, next) => {
+    const { userId, rankId } = req.body;
+    const userBlacklist = blacklist.find(entry => entry.userId === userId);
+
+    if (userBlacklist && rankId >= userBlacklist.rankThreshold) {
+        return res.status(403).send({ error: 'User is blacklisted from this rank or higher.' });
+    }
+
+    next();
 });
 
 app.listen(PORT, () => {
